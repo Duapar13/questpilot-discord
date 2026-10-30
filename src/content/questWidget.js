@@ -27,6 +27,8 @@
   let fabButtonText;
   let fabIcon;
   let chevronBtn;
+  let lastSeenAt = null;
+  let statusTickInterval = null;
   const questCache = new Map();
 
   function injectStyles() {
@@ -48,6 +50,12 @@
       .qp-panel-header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; background: ${COLORS.bgElevated}; }
       .qp-panel-header .qp-title { font-size: 14px; font-weight: 700; flex: 1; }
       .qp-panel-header .qp-version { font-size: 11px; color: ${COLORS.muted}; }
+      .qp-status-row { display: flex; align-items: center; gap: 6px; padding: 8px 14px; font-size: 11.5px; color: ${COLORS.muted}; border-bottom: 1px solid rgba(255,255,255,.06); }
+      .qp-status-dot { width: 7px; height: 7px; border-radius: 50%; background: ${COLORS.muted}; flex-shrink: 0; }
+      .qp-status-dot.qp-live { background: ${COLORS.success}; box-shadow: 0 0 0 0 rgba(35,165,89,.6); animation: qp-pulse 1.6s ease-out infinite; }
+      .qp-status-dot.qp-slow { background: #faa61a; }
+      .qp-status-dot.qp-stalled { background: ${COLORS.danger}; }
+      @keyframes qp-pulse { 0% { box-shadow: 0 0 0 0 rgba(35,165,89,.6); } 70% { box-shadow: 0 0 0 6px rgba(35,165,89,0); } 100% { box-shadow: 0 0 0 0 rgba(35,165,89,0); } }
       .qp-list { max-height: 260px; overflow-y: auto; padding: 10px 14px; }
       .qp-empty { font-size: 12.5px; color: ${COLORS.muted}; padding: 6px 0; }
       .qp-quest { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
@@ -164,6 +172,15 @@
       if (versionEl && res?.version) versionEl.textContent = `v${res.version}`;
     });
 
+    const statusRow = document.createElement('div');
+    statusRow.id = 'qp-status-row';
+    statusRow.className = 'qp-status-row';
+    statusRow.innerHTML = `<span class="qp-status-dot"></span><span class="qp-status-text">Not started</span>`;
+    panel.appendChild(statusRow);
+    updateStatusRow();
+    clearInterval(statusTickInterval);
+    statusTickInterval = setInterval(updateStatusRow, 1000);
+
     const list = document.createElement('div');
     list.id = 'qp-list';
     list.className = 'qp-list';
@@ -217,6 +234,47 @@
     statusEl.innerHTML = quest.completed ? ICONS.check : `${quest.progress}/${quest.target}`;
   }
 
+  function updateStatusRow() {
+    const dot = document.querySelector('#qp-status-row .qp-status-dot');
+    const text = document.querySelector('#qp-status-row .qp-status-text');
+    if (!dot || !text) return;
+
+    dot.classList.remove('qp-live', 'qp-slow', 'qp-stalled');
+
+    if (lastSeenAt === null) {
+      text.textContent = allQuestsCompleted() ? 'All quests completed' : 'Waiting for Discord to load...';
+      if (allQuestsCompleted() && questCache.size > 0) dot.classList.add('qp-live');
+      return;
+    }
+
+    if (allQuestsCompleted()) {
+      dot.classList.add('qp-live');
+      text.textContent = 'All quests completed';
+      return;
+    }
+
+    const elapsed = Math.round((Date.now() - lastSeenAt) / 1000);
+    if (elapsed < 25) {
+      dot.classList.add('qp-live');
+      text.textContent = `Running — updated ${elapsed}s ago`;
+    } else if (elapsed < 60) {
+      dot.classList.add('qp-slow');
+      text.textContent = `Still running — updated ${elapsed}s ago`;
+    } else {
+      dot.classList.add('qp-stalled');
+      text.textContent = `No update in ${elapsed}s — may be stuck, try refreshing`;
+    }
+  }
+
+  function allQuestsCompleted() {
+    return questCache.size > 0 && [...questCache.values()].every((q) => q.completed);
+  }
+
+  function markSeen() {
+    lastSeenAt = Date.now();
+    updateStatusRow();
+  }
+
   function togglePanel() {
     panelExpanded = !panelExpanded;
     chevronBtn.classList.toggle('qp-open', panelExpanded);
@@ -225,11 +283,13 @@
     if (panelExpanded) {
       renderPanel();
     } else {
+      clearInterval(statusTickInterval);
       document.getElementById('qp-panel')?.remove();
     }
   }
 
   function removeWidget() {
+    clearInterval(statusTickInterval);
     document.getElementById('qp-root')?.remove();
   }
 
@@ -249,12 +309,23 @@
       data.data.forEach((q) => questCache.set(q.id, q));
       const list = document.getElementById('qp-list');
       if (list) renderQuestList(list);
+      markSeen();
     } else if (data.type === 'QUEST_UPDATE') {
       questCache.set(data.data.id, data.data);
       const list = document.getElementById('qp-list');
       if (list) upsertQuestRow(list, data.data);
+      markSeen();
+    } else if (data.type === 'QUEST_TICK') {
+      markSeen();
     } else if (data.type === 'QUEST_ERROR') {
       console.warn('[QuestPilot]', data.data.message);
+      const text = document.querySelector('#qp-status-row .qp-status-text');
+      const dot = document.querySelector('#qp-status-row .qp-status-dot');
+      if (text && dot) {
+        dot.classList.remove('qp-live', 'qp-slow');
+        dot.classList.add('qp-stalled');
+        text.textContent = data.data.message;
+      }
     }
   });
 

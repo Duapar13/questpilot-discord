@@ -12,6 +12,7 @@
     const check = () => {
       if (attempts >= maxAttempts) {
         console.warn(`${LOG_PREFIX} Gave up waiting for Discord's webpack runtime.`);
+        sendUpdate('QUEST_ERROR', { message: "Timed out waiting for Discord to load. Try refreshing the page." });
         return;
       }
 
@@ -197,6 +198,7 @@
       if (state.completed) continue;
 
       while (!state.completed) {
+        sendUpdate('QUEST_TICK', { id: state.quest.id });
         const isVideo = state.taskType.startsWith('WATCH_VIDEO');
 
         if (isVideo) {
