@@ -14,7 +14,8 @@ Completes your Discord quests automatically — video, desktop game, desktop str
 
 ## What's different from the original
 
-- **Redesigned widget**: Discord-themed floating pill with a spinner/success/error state, and an expandable panel with animated per-quest progress bars (not just raw numbers).
+- **Redesigned widget**: Discord-themed floating pill with a spinner/success/error state, and an expandable panel with animated per-quest progress bars (not just raw numbers), a custom scrollbar, estimated time remaining per quest and overall, and the Orbs reward you'll get for each quest.
+- **Live status indicator**: a colored dot + "updated Xs ago" text so you can tell at a glance whether the engine is still running or has stalled.
 - **No external image dependency**: icons are inline SVG instead of third-party CDN images — faster, more private, and won't break if a CDN link dies.
 - **Persisted panel state** via `chrome.storage.local`, so the panel stays open/closed across page reloads.
 - **Cleaner code**: the quest engine, UI, and background worker are split into dedicated files, errors are logged instead of silently swallowed, and duplicated constants were removed.

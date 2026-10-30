@@ -10,7 +10,8 @@
     danger: '#f23f42',
     text: '#f2f3f5',
     muted: '#949ba4',
-    track: '#404249'
+    track: '#404249',
+    orb: '#c77dff'
   };
 
   const ICONS = {
@@ -20,7 +21,11 @@
     check:
       '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
     spinner:
-      '<svg viewBox="0 0 24 24" width="14" height="14" class="qp-spin"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="40 100" stroke-linecap="round"/></svg>'
+      '<svg viewBox="0 0 24 24" width="14" height="14" class="qp-spin"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="40 100" stroke-linecap="round"/></svg>',
+    orb:
+      '<svg viewBox="0 0 24 24" width="11" height="11"><circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="9" cy="9" r="2.5" fill="rgba(255,255,255,.55)"/></svg>',
+    clock:
+      '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>'
   };
 
   let panelExpanded = false;
@@ -56,7 +61,11 @@
       .qp-status-dot.qp-slow { background: #faa61a; }
       .qp-status-dot.qp-stalled { background: ${COLORS.danger}; }
       @keyframes qp-pulse { 0% { box-shadow: 0 0 0 0 rgba(35,165,89,.6); } 70% { box-shadow: 0 0 0 6px rgba(35,165,89,0); } 100% { box-shadow: 0 0 0 0 rgba(35,165,89,0); } }
-      .qp-list { max-height: 260px; overflow-y: auto; padding: 10px 14px; }
+      .qp-list { max-height: 260px; overflow-y: auto; padding: 10px 14px; scrollbar-width: thin; scrollbar-color: ${COLORS.track} transparent; }
+      .qp-list::-webkit-scrollbar { width: 6px; }
+      .qp-list::-webkit-scrollbar-track { background: transparent; }
+      .qp-list::-webkit-scrollbar-thumb { background: ${COLORS.track}; border-radius: 10px; }
+      .qp-list::-webkit-scrollbar-thumb:hover { background: ${COLORS.accent}; }
       .qp-empty { font-size: 12.5px; color: ${COLORS.muted}; padding: 6px 0; }
       .qp-quest { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
       .qp-quest:last-child { border-bottom: none; }
@@ -65,10 +74,14 @@
       .qp-quest-status { font-size: 11px; font-family: ui-monospace, Consolas, monospace; color: ${COLORS.muted}; display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
       .qp-quest-status.qp-done { color: ${COLORS.success}; }
       .qp-bar-track { height: 5px; border-radius: 4px; background: ${COLORS.track}; overflow: hidden; }
-      .qp-bar-fill { height: 100%; border-radius: 4px; background: ${COLORS.accent}; transition: width .4s ease, background .3s ease; }
+      .qp-bar-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, ${COLORS.accent}, #8a7dff); transition: width .4s ease, background .3s ease; }
       .qp-bar-fill.qp-done { background: ${COLORS.success}; }
-      .qp-panel-footer { padding: 10px 14px; font-size: 11.5px; color: ${COLORS.muted}; border-top: 1px solid rgba(255,255,255,.06); }
-      .qp-panel-footer a { color: ${COLORS.text}; font-weight: 600; text-decoration: none; }
+      .qp-quest-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 5px; font-size: 10.5px; color: ${COLORS.muted}; }
+      .qp-eta { display: flex; align-items: center; gap: 3px; }
+      .qp-orb-badge { display: flex; align-items: center; gap: 3px; color: ${COLORS.orb}; font-weight: 600; }
+      .qp-panel-footer { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; font-size: 11.5px; color: ${COLORS.muted}; border-top: 1px solid rgba(255,255,255,.06); }
+      .qp-panel-footer .qp-eta, .qp-panel-footer .qp-orb-badge { font-size: 12px; }
+      .qp-panel-footer .qp-orb-badge { color: ${COLORS.orb}; }
       .qp-spin { animation: qp-rotate 0.9s linear infinite; }
       @keyframes qp-rotate { to { transform: rotate(360deg); } }
       @keyframes qp-slide-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
@@ -188,11 +201,37 @@
     panel.appendChild(list);
 
     const footer = document.createElement('div');
+    footer.id = 'qp-summary';
     footer.className = 'qp-panel-footer';
-    footer.innerHTML = 'Fork of the original Discord auto-quest script by <a href="https://gist.github.com/aamiaa/204cd9d42013ded9faf646fae7f89fbb" target="_blank">aamiaa</a>.';
+    footer.innerHTML = `
+      <span class="qp-eta">${ICONS.clock}<span id="qp-total-eta">—</span></span>
+      <span class="qp-orb-badge">${ICONS.orb}<span id="qp-total-orbs">—</span></span>
+    `;
     panel.appendChild(footer);
+    updateSummary();
 
     document.getElementById('qp-root').insertBefore(panel, document.getElementById('qp-fab'));
+  }
+
+  function formatDuration(totalSeconds) {
+    const s = Math.max(0, Math.round(totalSeconds));
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+  }
+
+  function updateSummary() {
+    const etaEl = document.getElementById('qp-total-eta');
+    const orbsEl = document.getElementById('qp-total-orbs');
+    if (!etaEl || !orbsEl) return;
+
+    const quests = [...questCache.values()];
+    const totalOrbs = quests.reduce((sum, q) => sum + (q.orbs ?? 0), 0);
+    const remainingSeconds = quests.reduce((sum, q) => (q.completed ? sum : sum + Math.max(0, q.target - q.progress)), 0);
+    const hasPending = quests.some((q) => !q.completed);
+
+    etaEl.textContent = quests.length === 0 ? '—' : hasPending ? `~${formatDuration(remainingSeconds)} left` : 'Done';
+    orbsEl.textContent = quests.length === 0 ? '—' : `${totalOrbs}`;
   }
 
   function renderQuestList(list) {
@@ -219,6 +258,10 @@
           <span class="qp-quest-status"></span>
         </div>
         <div class="qp-bar-track"><div class="qp-bar-fill"></div></div>
+        <div class="qp-quest-meta">
+          <span class="qp-eta"></span>
+          <span class="qp-orb-badge"></span>
+        </div>
       `;
       row.querySelector('.qp-quest-name').textContent = quest.name;
       list.appendChild(row);
@@ -226,12 +269,21 @@
 
     const statusEl = row.querySelector('.qp-quest-status');
     const fillEl = row.querySelector('.qp-bar-fill');
+    const etaEl = row.querySelector('.qp-eta');
+    const orbEl = row.querySelector('.qp-orb-badge');
     const pct = quest.target > 0 ? Math.min(100, (quest.progress / quest.target) * 100) : 0;
 
     fillEl.style.width = `${pct}%`;
     fillEl.classList.toggle('qp-done', quest.completed);
     statusEl.classList.toggle('qp-done', quest.completed);
     statusEl.innerHTML = quest.completed ? ICONS.check : `${quest.progress}/${quest.target}`;
+
+    etaEl.innerHTML = quest.completed
+      ? ''
+      : `${ICONS.clock}<span>~${formatDuration(Math.max(0, quest.target - quest.progress))}</span>`;
+    orbEl.innerHTML = typeof quest.orbs === 'number' ? `${ICONS.orb}<span>${quest.orbs}</span>` : '';
+
+    updateSummary();
   }
 
   function updateStatusRow() {

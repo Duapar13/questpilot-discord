@@ -91,6 +91,12 @@
     });
   }
 
+  function getOrbReward(quest) {
+    const rewards = quest.config.rewardsConfig?.rewards ?? [];
+    const orbReward = rewards.find((r) => typeof r.orbQuantity === 'number');
+    return orbReward?.orbQuantity ?? null;
+  }
+
   function initializeQuestState(quest) {
     const taskConfig = quest.config.taskConfig ?? quest.config.taskConfigV2;
     const taskType = SUPPORTED_TASKS.find((type) => taskConfig.tasks[type] != null);
@@ -104,12 +110,20 @@
       secondsNeeded,
       currentProgress,
       completed: currentProgress >= secondsNeeded,
-      questName: quest.config.messages.questName
+      questName: quest.config.messages.questName,
+      orbs: getOrbReward(quest)
     };
   }
 
-  function notifyUI(quest, progress, target, completed) {
-    sendUpdate('QUEST_UPDATE', { id: quest.id, name: quest.config.messages.questName, progress, target, completed });
+  function notifyUI(state, progress, target, completed) {
+    sendUpdate('QUEST_UPDATE', {
+      id: state.quest.id,
+      name: state.questName,
+      progress,
+      target,
+      completed,
+      orbs: state.orbs
+    });
   }
 
   async function processVideoStep(state, api) {
@@ -119,11 +133,11 @@
     try {
       const res = await api.post({ url: `/quests/${quest.id}/video-progress`, body: { timestamp: nextTime } });
       state.currentProgress = nextTime;
-      notifyUI(quest, Math.floor(state.currentProgress), secondsNeeded, false);
+      notifyUI(state, Math.floor(state.currentProgress), secondsNeeded, false);
 
       if (res.body.completed_at !== null || state.currentProgress >= secondsNeeded) {
         state.completed = true;
-        notifyUI(quest, secondsNeeded, secondsNeeded, true);
+        notifyUI(state, secondsNeeded, secondsNeeded, true);
         await api.post({ url: `/quests/${quest.id}/video-progress`, body: { timestamp: secondsNeeded } });
       }
     } catch (error) {
@@ -148,12 +162,12 @@
       const response = await api.post({ url: `/quests/${quest.id}/heartbeat`, body: { stream_key: streamKey, terminal: false } });
       const serverProgress = response.body?.progress?.[taskType]?.value ?? 0;
       state.currentProgress = serverProgress;
-      notifyUI(quest, Math.floor(state.currentProgress), secondsNeeded, state.currentProgress >= secondsNeeded);
+      notifyUI(state, Math.floor(state.currentProgress), secondsNeeded, state.currentProgress >= secondsNeeded);
 
       if (state.currentProgress >= secondsNeeded) {
         await api.post({ url: `/quests/${quest.id}/heartbeat`, body: { stream_key: streamKey, terminal: true } });
         state.completed = true;
-        notifyUI(quest, secondsNeeded, secondsNeeded, true);
+        notifyUI(state, secondsNeeded, secondsNeeded, true);
       }
     } catch (error) {
       console.error(`${LOG_PREFIX} Heartbeat step failed for "${state.questName}":`, error);
@@ -190,7 +204,8 @@
         name: state.questName,
         progress: Math.floor(state.currentProgress),
         target: state.secondsNeeded,
-        completed: state.completed
+        completed: state.completed,
+        orbs: state.orbs
       }))
     );
 
