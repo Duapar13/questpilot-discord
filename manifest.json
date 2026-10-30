@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "QuestPilot for Discord",
+  "version": "1.0.0",
+  "description": "Finishes your Discord quests automatically with a clean, draggable-free floating widget showing live progress.",
+  "icons": {
+    "16": "assets/icon16.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  },
+  "permissions": [
+    "declarativeNetRequestWithHostAccess",
+    "scripting",
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://*.discord.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://discord.com/*", "https://canary.discord.com/*"],
+      "js": ["src/content/questWidget.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://discord.com/*", "https://canary.discord.com/*"],
+      "js": ["src/content/userAgentOverride.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ruleset_1",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  }
+}
