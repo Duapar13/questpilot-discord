@@ -34,19 +34,31 @@
   let chevronBtn;
   let lastSeenAt = null;
   let statusTickInterval = null;
-  let hideClaimedEnabled = true;
+  let hideClaimedEnabled = false;
   let hideClaimedInterval = null;
   const questCache = new Map();
   const hiddenCardRefs = new Set();
 
+  function countViewRewardButtons(node) {
+    return [...node.querySelectorAll('button, div[role="button"], a[role="button"]')].filter(
+      (b) => (b.textContent || '').trim().toLowerCase() === 'view reward'
+    ).length;
+  }
+
   function findQuestCard(button) {
     let el = button;
-    for (let i = 0; i < 8 && el.parentElement; i++) {
-      el = el.parentElement;
-      const rect = el.getBoundingClientRect();
-      if (el.children.length > 1 && rect.height > 60 && rect.width > 150) return el;
+
+    for (let i = 0; i < 12 && el.parentElement; i++) {
+      const parent = el.parentElement;
+      if (countViewRewardButtons(parent) > 1) break;
+      el = parent;
     }
-    return button.parentElement || button;
+
+    if (el === button) return null;
+
+    const rect = el.getBoundingClientRect();
+    const tooBig = rect.width > window.innerWidth * 0.9 && rect.height > window.innerHeight * 0.6;
+    return tooBig ? null : el;
   }
 
   function scanForClaimedQuests() {
@@ -57,7 +69,7 @@
       if (label !== 'view reward') return;
 
       const card = findQuestCard(el);
-      if (card.classList.contains('qp-claimed-hidden')) return;
+      if (!card || card.classList.contains('qp-claimed-hidden')) return;
 
       card.classList.add('qp-claimed-hidden');
       hiddenCardRefs.add(card);
@@ -465,7 +477,7 @@
 
   function init() {
     chrome.storage?.local.get(['qpHideClaimed'], (result) => {
-      hideClaimedEnabled = result?.qpHideClaimed !== false;
+      hideClaimedEnabled = result?.qpHideClaimed === true;
       scanForClaimedQuests();
     });
 
