@@ -34,7 +34,47 @@
   let chevronBtn;
   let lastSeenAt = null;
   let statusTickInterval = null;
+  let hideClaimedEnabled = true;
+  let hideClaimedInterval = null;
   const questCache = new Map();
+  const hiddenCardRefs = new Set();
+
+  function findQuestCard(button) {
+    let el = button;
+    for (let i = 0; i < 8 && el.parentElement; i++) {
+      el = el.parentElement;
+      const rect = el.getBoundingClientRect();
+      if (el.children.length > 1 && rect.height > 60 && rect.width > 150) return el;
+    }
+    return button.parentElement || button;
+  }
+
+  function scanForClaimedQuests() {
+    if (!hideClaimedEnabled || !window.location.pathname.includes('/quest-home')) return;
+
+    document.querySelectorAll('button, div[role="button"], a[role="button"]').forEach((el) => {
+      const label = (el.textContent || '').trim().toLowerCase();
+      if (label !== 'view reward') return;
+
+      const card = findQuestCard(el);
+      if (card.classList.contains('qp-claimed-hidden')) return;
+
+      card.classList.add('qp-claimed-hidden');
+      hiddenCardRefs.add(card);
+    });
+  }
+
+  function setHideClaimedEnabled(enabled) {
+    hideClaimedEnabled = enabled;
+    chrome.storage?.local.set({ qpHideClaimed: enabled });
+
+    if (enabled) {
+      scanForClaimedQuests();
+    } else {
+      hiddenCardRefs.forEach((card) => card.classList.remove('qp-claimed-hidden'));
+      hiddenCardRefs.clear();
+    }
+  }
 
   function injectStyles() {
     if (document.getElementById('qp-styles')) return;
@@ -67,8 +107,9 @@
       .qp-list::-webkit-scrollbar-thumb { background: ${COLORS.track}; border-radius: 10px; }
       .qp-list::-webkit-scrollbar-thumb:hover { background: ${COLORS.accent}; }
       .qp-empty { font-size: 12.5px; color: ${COLORS.muted}; padding: 6px 0; }
-      .qp-quest { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+      .qp-quest { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.06); overflow: hidden; transition: opacity .35s ease, max-height .35s ease, padding .35s ease, margin .35s ease, border-color .35s ease; }
       .qp-quest:last-child { border-bottom: none; }
+      .qp-quest.qp-removing { opacity: 0; max-height: 0 !important; padding-top: 0; padding-bottom: 0; margin: 0; border-color: transparent; }
       .qp-quest-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
       .qp-quest-name { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
       .qp-quest-status { font-size: 11px; font-family: ui-monospace, Consolas, monospace; color: ${COLORS.muted}; display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
@@ -85,6 +126,14 @@
       .qp-spin { animation: qp-rotate 0.9s linear infinite; }
       @keyframes qp-rotate { to { transform: rotate(360deg); } }
       @keyframes qp-slide-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+      .qp-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 14px; font-size: 11.5px; color: ${COLORS.muted}; border-bottom: 1px solid rgba(255,255,255,.06); }
+      .qp-switch { position: relative; width: 30px; height: 16px; flex-shrink: 0; }
+      .qp-switch input { opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+      .qp-switch-track { position: absolute; inset: 0; background: ${COLORS.track}; border-radius: 999px; transition: background .2s ease; pointer-events: none; }
+      .qp-switch-track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; background: #fff; border-radius: 50%; transition: transform .2s ease; }
+      .qp-switch input:checked + .qp-switch-track { background: ${COLORS.accent}; }
+      .qp-switch input:checked + .qp-switch-track::after { transform: translateX(14px); }
+      .qp-claimed-hidden { display: none !important; }
     `;
     document.head.appendChild(style);
   }
@@ -185,6 +234,20 @@
       if (versionEl && res?.version) versionEl.textContent = `v${res.version}`;
     });
 
+    const toggleRow = document.createElement('div');
+    toggleRow.className = 'qp-toggle-row';
+    toggleRow.innerHTML = `
+      <span>Hide claimed quests on page</span>
+      <label class="qp-switch">
+        <input type="checkbox" id="qp-hide-claimed-toggle" ${hideClaimedEnabled ? 'checked' : ''}>
+        <span class="qp-switch-track"></span>
+      </label>
+    `;
+    toggleRow.querySelector('#qp-hide-claimed-toggle').addEventListener('change', (e) => {
+      setHideClaimedEnabled(e.target.checked);
+    });
+    panel.appendChild(toggleRow);
+
     const statusRow = document.createElement('div');
     statusRow.id = 'qp-status-row';
     statusRow.className = 'qp-status-row';
@@ -284,6 +347,25 @@
     orbEl.innerHTML = typeof quest.orbs === 'number' ? `${ICONS.orb}<span>${quest.orbs}</span>` : '';
 
     updateSummary();
+
+    if (quest.completed && !row.dataset.qpRemoving) {
+      row.dataset.qpRemoving = '1';
+      scheduleRowRemoval(row, list);
+    }
+  }
+
+  function scheduleRowRemoval(row, list) {
+    setTimeout(() => {
+      row.style.maxHeight = `${row.offsetHeight}px`;
+      requestAnimationFrame(() => row.classList.add('qp-removing'));
+      setTimeout(() => {
+        row.remove();
+        if (!list.querySelector('.qp-quest')) {
+          list.innerHTML = '<div class="qp-empty">All quests completed \u{1F389}</div>';
+        }
+        updateSummary();
+      }, 400);
+    }, 1400);
   }
 
   function updateStatusRow() {
@@ -382,6 +464,14 @@
   });
 
   function init() {
+    chrome.storage?.local.get(['qpHideClaimed'], (result) => {
+      hideClaimedEnabled = result?.qpHideClaimed !== false;
+      scanForClaimedQuests();
+    });
+
+    clearInterval(hideClaimedInterval);
+    hideClaimedInterval = setInterval(scanForClaimedQuests, 1500);
+
     syncWidgetForLocation();
 
     let lastUrl = window.location.href;
